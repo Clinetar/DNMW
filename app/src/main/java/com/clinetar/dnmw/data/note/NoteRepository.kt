@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import java.io.File
+import kotlinx.coroutines.flow.first
 
 class NoteRepository(private val context: Context) {
     private var database: NoteDatabase? = null
@@ -15,7 +16,7 @@ class NoteRepository(private val context: Context) {
 
     fun getNotes(path: String?, encrypted: Boolean, password: String?): Flow<List<Note>> {
         if (path.isNullOrBlank()) return flowOf(emptyList())
-        
+
         val db = getDatabase(path, encrypted, password)
         return db.noteDao().getAllNotes()
     }
@@ -40,7 +41,7 @@ class NoteRepository(private val context: Context) {
         }
 
         val dbFile = File(path)
-        
+
         // Ensure SQLCipher is loaded before any database operation
         try {
             System.loadLibrary("sqlcipher")
@@ -52,9 +53,9 @@ class NoteRepository(private val context: Context) {
         if (dbFile.exists() && encrypted && !password.isNullOrBlank()) {
             try {
                 net.zetetic.database.sqlcipher.SQLiteDatabase.openDatabase(
-                    path, 
-                    password, 
-                    null, 
+                    path,
+                    password,
+                    null,
                     net.zetetic.database.sqlcipher.SQLiteDatabase.OPEN_READONLY,
                     null
                 ).use { it.close() }
@@ -110,9 +111,18 @@ class NoteRepository(private val context: Context) {
         destPassword: String?
     ) {
         closeDatabase()
+
+        // Ensure SQLCipher is loaded before any database operation
+        try {
+            System.loadLibrary("sqlcipher")
+        } catch (e: UnsatisfiedLinkError) {
+            android.util.Log.e("DNMW", "Failed to load sqlcipher library: ${e.message}", e)
+            throw e // Re-throw to indicate a critical setup error
+        }
         // Use the files directory for the temp file to avoid cache/permission issues with ATTACH
         val tempFile = File(context.filesDir, "export_temp.db")
         if (tempFile.exists()) tempFile.delete()
+        tempFile.createNewFile() // Ensure the file exists before ATTACH
 
         // Use SQLCipher to export/rekey the database
         val database = net.zetetic.database.sqlcipher.SQLiteDatabase.openDatabase(

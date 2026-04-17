@@ -139,20 +139,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val context = getApplication<Application>()
             noteRepository.closeDatabase()
-            
+
             val internalDir = context.filesDir
             val dbDir = java.io.File(internalDir, "databases")
             if (!dbDir.exists()) dbDir.mkdirs()
-            
+
             val fileName = "imported_${System.currentTimeMillis()}.db"
             val destFile = java.io.File(dbDir, fileName)
-            
+
             context.contentResolver.openInputStream(uri)?.use { input ->
                 destFile.outputStream().use { output ->
                     input.copyTo(output)
                 }
             }
-            
+
             themeSettings.setDatabasePath(destFile.absolutePath)
         }
     }
