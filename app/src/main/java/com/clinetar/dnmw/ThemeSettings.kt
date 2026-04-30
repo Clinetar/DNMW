@@ -34,7 +34,6 @@ class ThemeSettings(private val context: Context) {
         val PURE_BLACK_KEY = booleanPreferencesKey("pure_black")
         val DATABASE_PATH_KEY = stringPreferencesKey("database_path")
         val IS_ENCRYPTED_KEY = booleanPreferencesKey("is_encrypted")
-        val DB_PASSWORD_KEY = stringPreferencesKey("db_password")
     }
 
     val themeStream: Flow<AppTheme> = context.dataStore.data
@@ -58,9 +57,6 @@ class ThemeSettings(private val context: Context) {
     val isEncryptedStream: Flow<Boolean> = context.dataStore.data
         .map { it[IS_ENCRYPTED_KEY] ?: false }
 
-    val dbPasswordStream: Flow<String?> = context.dataStore.data
-        .map { it[DB_PASSWORD_KEY] }
-
     suspend fun setTheme(theme: AppTheme) {
         context.dataStore.edit { it[THEME_KEY] = theme.name }
     }
@@ -79,9 +75,5 @@ class ThemeSettings(private val context: Context) {
 
     suspend fun setIsEncrypted(enabled: Boolean) {
         context.dataStore.edit { it[IS_ENCRYPTED_KEY] = enabled }
-    }
-
-    suspend fun setDbPassword(password: String) {
-        context.dataStore.edit { it[DB_PASSWORD_KEY] = password }
     }
 }

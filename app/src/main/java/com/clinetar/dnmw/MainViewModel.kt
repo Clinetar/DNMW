@@ -5,10 +5,13 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.clinetar.dnmw.data.note.Note
 import com.clinetar.dnmw.data.note.NoteRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -17,85 +20,53 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val noteRepository = NoteRepository(application)
 
     val themeState: StateFlow<AppTheme> = themeSettings.themeStream
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = AppTheme.SYSTEM
-        )
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), AppTheme.SYSTEM)
 
     val customColorState: StateFlow<CustomColor> = themeSettings.customColorStream
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = CustomColor.DYNAMIC
-        )
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CustomColor.DYNAMIC)
 
     val pureBlackState: StateFlow<Boolean> = themeSettings.pureBlackStream
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = false
-        )
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     val databasePathState: StateFlow<String?> = themeSettings.databasePathStream
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = null
-        )
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val isEncryptedState: StateFlow<Boolean> = themeSettings.isEncryptedStream
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = false
-        )
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    val dbPasswordState: StateFlow<String?> = themeSettings.dbPasswordStream
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = null
-        )
+    // Loaded asynchronously on IO thread to avoid blocking the main thread during Keystore init.
+    private val _internalDbKey = MutableStateFlow<String?>(null)
 
-    val notesState: StateFlow<List<Note>> = databasePathState.flatMapLatest { path ->
-        noteRepository.getNotes(path, true, "dnmw_internal_secure_key")
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = emptyList()
-    )
+    val notesState: StateFlow<List<Note>> = combine(databasePathState, _internalDbKey) { path, key ->
+        Pair(path, key)
+    }.flatMapLatest { (path, key) ->
+        if (key != null) noteRepository.getNotes(path, true, key)
+        else flowOf(emptyList())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val favoriteNotesState: StateFlow<List<Note>> = databasePathState.flatMapLatest { path ->
-        noteRepository.getFavoriteNotes(path, true, "dnmw_internal_secure_key")
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = emptyList()
-    )
+    val favoriteNotesState: StateFlow<List<Note>> = combine(databasePathState, _internalDbKey) { path, key ->
+        Pair(path, key)
+    }.flatMapLatest { (path, key) ->
+        if (key != null) noteRepository.getFavoriteNotes(path, true, key)
+        else flowOf(emptyList())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    init {
+        viewModelScope.launch(Dispatchers.IO) {
+            _internalDbKey.value = KeyManager.getInternalDbKey(application)
+        }
+    }
 
     fun setTheme(theme: AppTheme) {
-        viewModelScope.launch {
-            themeSettings.setTheme(theme)
-        }
+        viewModelScope.launch { themeSettings.setTheme(theme) }
     }
 
     fun setCustomColor(color: CustomColor) {
-        viewModelScope.launch {
-            themeSettings.setCustomColor(color)
-        }
+        viewModelScope.launch { themeSettings.setCustomColor(color) }
     }
 
     fun setPureBlack(enabled: Boolean) {
-        viewModelScope.launch {
-            themeSettings.setPureBlack(enabled)
-        }
-    }
-
-    fun setDatabasePath(path: String) {
-        viewModelScope.launch {
-            themeSettings.setDatabasePath(path)
-        }
+        viewModelScope.launch { themeSettings.setPureBlack(enabled) }
     }
 
     fun setDatabaseName(name: String) {
@@ -109,75 +80,68 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun setIsEncrypted(enabled: Boolean) {
-        viewModelScope.launch {
-            themeSettings.setIsEncrypted(enabled)
-        }
-    }
-
-    fun setDbPassword(password: String?) {
-        viewModelScope.launch {
-            themeSettings.setDbPassword(password ?: "")
-        }
+        viewModelScope.launch { themeSettings.setIsEncrypted(enabled) }
     }
 
     fun deleteDatabase() {
         viewModelScope.launch {
-            val path = databasePathState.value
-            if (path != null) {
-                noteRepository.closeDatabase()
-                val file = java.io.File(path)
-                if (file.exists()) file.delete()
-                // Also delete related files if any (e.g. -wal, -shm)
-                java.io.File("$path-wal").delete()
-                java.io.File("$path-shm").delete()
-                themeSettings.setDatabasePath("")
-            }
+            val path = databasePathState.value ?: return@launch
+            noteRepository.closeDatabase()
+            val file = java.io.File(path)
+            if (file.exists()) file.delete()
+            java.io.File("$path-wal").delete()
+            java.io.File("$path-shm").delete()
+            themeSettings.setDatabasePath("")
         }
     }
 
-    fun importDatabase(uri: android.net.Uri) {
+    fun importDatabase(uri: android.net.Uri, importPassword: String? = null) {
         viewModelScope.launch {
+            val key = _internalDbKey.value ?: return@launch
             val context = getApplication<Application>()
             noteRepository.closeDatabase()
-
-            val internalDir = context.filesDir
-            val dbDir = java.io.File(internalDir, "databases")
+            val dbDir = java.io.File(context.filesDir, "databases")
             if (!dbDir.exists()) dbDir.mkdirs()
-
-            val fileName = "imported_${System.currentTimeMillis()}.db"
-            val destFile = java.io.File(dbDir, fileName)
-
+            val destFile = java.io.File(dbDir, "imported_${System.currentTimeMillis()}.db")
             context.contentResolver.openInputStream(uri)?.use { input ->
-                destFile.outputStream().use { output ->
-                    input.copyTo(output)
+                destFile.outputStream().use { output -> input.copyTo(output) }
+            }
+            try {
+                noteRepository.reencryptImportedDatabase(destFile.absolutePath, importPassword, key)
+                themeSettings.setDatabasePath(destFile.absolutePath)
+            } catch (e: Exception) {
+                destFile.delete()
+                launch(Dispatchers.Main) {
+                    android.widget.Toast.makeText(
+                        context,
+                        "Import failed: incorrect password or unsupported file",
+                        android.widget.Toast.LENGTH_LONG
+                    ).show()
                 }
             }
-
-            themeSettings.setDatabasePath(destFile.absolutePath)
         }
     }
 
     fun exportDatabase(uri: android.net.Uri, password: String?, isEncrypted: Boolean) {
         viewModelScope.launch {
+            val key = _internalDbKey.value ?: return@launch
             val currentPath = databasePathState.value ?: return@launch
             noteRepository.exportDatabase(
                 sourcePath = currentPath,
                 sourceEncrypted = true,
-                sourcePassword = "dnmw_internal_secure_key",
+                sourcePassword = key,
                 destUri = uri,
                 destPassword = if (isEncrypted) password else null
             )
-            // Re-open database for normal operation
             themeSettings.setDatabasePath(currentPath)
         }
     }
 
     fun addNote(title: String, content: String) {
         viewModelScope.launch {
+            val key = _internalDbKey.value ?: return@launch
             noteRepository.insertNote(
-                databasePathState.value,
-                true,
-                "dnmw_internal_secure_key",
+                databasePathState.value, true, key,
                 Note(title = title, content = content)
             )
         }
@@ -185,21 +149,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun deleteNote(note: Note) {
         viewModelScope.launch {
-            noteRepository.deleteNote(
-                databasePathState.value,
-                true,
-                "dnmw_internal_secure_key",
-                note
-            )
+            val key = _internalDbKey.value ?: return@launch
+            noteRepository.deleteNote(databasePathState.value, true, key, note)
+        }
+    }
+
+    fun updateNote(note: Note) {
+        viewModelScope.launch {
+            val key = _internalDbKey.value ?: return@launch
+            noteRepository.updateNote(databasePathState.value, true, key, note)
         }
     }
 
     fun toggleFavorite(note: Note) {
         viewModelScope.launch {
+            val key = _internalDbKey.value ?: return@launch
             noteRepository.updateNote(
-                databasePathState.value,
-                true,
-                "dnmw_internal_secure_key",
+                databasePathState.value, true, key,
                 note.copy(isFavorite = !note.isFavorite)
             )
         }

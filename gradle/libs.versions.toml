@@ -10,6 +10,7 @@ room = "2.6.1"
 ksp = "2.0.21-1.0.27"
 sqlcipher = "4.14.1"
 sqlite = "2.4.0"
+security = "1.0.0"
 activityCompose = "1.9.3"
 kotlin = "2.0.21"
 composeBom = "2024.10.01"
@@ -38,6 +39,7 @@ androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = 
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 sqlcipher = { group = "net.zetetic", name = "sqlcipher-android", version.ref = "sqlcipher" }
 sqlite-ktx = { group = "androidx.sqlite", name = "sqlite-ktx", version.ref = "sqlite" }
+androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "security" }
 
 [plugins]
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }

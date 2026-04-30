@@ -2,13 +2,13 @@ package com.clinetar.dnmw.data.note
 
 import android.content.Context
 import androidx.room.Room
+import com.clinetar.dnmw.BuildConfig
+import com.clinetar.dnmw.KeyManager
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import net.zetetic.database.sqlcipher.SupportOpenHelperFactory
 import java.io.File
-import kotlinx.coroutines.flow.first
 
 class NoteRepository(private val context: Context) {
     private var database: NoteDatabase? = null
@@ -16,16 +16,12 @@ class NoteRepository(private val context: Context) {
 
     fun getNotes(path: String?, encrypted: Boolean, password: String?): Flow<List<Note>> {
         if (path.isNullOrBlank()) return flowOf(emptyList())
-
-        val db = getDatabase(path, encrypted, password)
-        return db.noteDao().getAllNotes()
+        return getDatabase(path, encrypted, password).noteDao().getAllNotes()
     }
 
     fun getFavoriteNotes(path: String?, encrypted: Boolean, password: String?): Flow<List<Note>> {
         if (path.isNullOrBlank()) return flowOf(emptyList())
-
-        val db = getDatabase(path, encrypted, password)
-        return db.noteDao().getFavoriteNotes()
+        return getDatabase(path, encrypted, password).noteDao().getFavoriteNotes()
     }
 
     fun closeDatabase() {
@@ -35,37 +31,28 @@ class NoteRepository(private val context: Context) {
     }
 
     private fun getDatabase(path: String, encrypted: Boolean, password: String?): NoteDatabase {
-        val currentDb = database
-        if (currentDb != null) {
-            return currentDb
-        }
+        database?.let { return it }
 
         val dbFile = File(path)
 
-        // Ensure SQLCipher is loaded before any database operation
         try {
             System.loadLibrary("sqlcipher")
         } catch (e: UnsatisfiedLinkError) {
-            // Already loaded or other issue
+            // Already loaded
         }
 
-        // Check if existing database is compatible with the provided password
         if (dbFile.exists() && encrypted && !password.isNullOrBlank()) {
-            try {
-                net.zetetic.database.sqlcipher.SQLiteDatabase.openDatabase(
-                    path,
-                    password,
-                    null,
-                    net.zetetic.database.sqlcipher.SQLiteDatabase.OPEN_READONLY,
-                    null
-                ).use { it.close() }
-            } catch (e: Exception) {
-                // If it's a key mismatch (SQLiteNotADatabaseException), we must reset
-                // to avoid crash loops. In a production app, we might prompt the user,
-                // but for internal-only keys, we recreate.
-                dbFile.delete()
-                File("$path-wal").delete()
-                File("$path-shm").delete()
+            if (!canOpenDatabase(path, password)) {
+                when {
+                    canOpenDatabase(path, KeyManager.LEGACY_KEY) ->
+                        try { reencryptDatabase(path, KeyManager.LEGACY_KEY, password) }
+                        catch (e: Exception) { deleteDbFiles(path) }
+                    // Empty-key covers unencrypted exports from this app (destPassword = null → key = "")
+                    canOpenDatabase(path, "") ->
+                        try { reencryptDatabase(path, "", password) }
+                        catch (e: Exception) { deleteDbFiles(path) }
+                    else -> deleteDbFiles(path)
+                }
             }
         }
 
@@ -76,16 +63,73 @@ class NoteRepository(private val context: Context) {
         )
 
         if (encrypted && !password.isNullOrBlank()) {
-            val factory = SupportOpenHelperFactory(password.toByteArray())
-            builder.openHelperFactory(factory)
+            builder.openHelperFactory(SupportOpenHelperFactory(password.toByteArray()))
         }
 
-        val db = builder.fallbackToDestructiveMigration()
+        val db = builder
+            .addMigrations(NoteDatabase.MIGRATION_1_2)
             .setJournalMode(androidx.room.RoomDatabase.JournalMode.TRUNCATE)
             .build()
         database = db
         _dbFlow.value = db
         return db
+    }
+
+    /** Re-encrypts an imported database with the app's Keystore key, trying known fallback keys. */
+    fun reencryptImportedDatabase(path: String, importPassword: String?, keystoreKey: String) {
+        try { System.loadLibrary("sqlcipher") } catch (e: UnsatisfiedLinkError) { }
+
+        if (canOpenDatabase(path, keystoreKey)) return // already using our key
+
+        val openedWith = when {
+            !importPassword.isNullOrBlank() && canOpenDatabase(path, importPassword) -> importPassword
+            canOpenDatabase(path, KeyManager.LEGACY_KEY) -> KeyManager.LEGACY_KEY
+            canOpenDatabase(path, "") -> ""
+            else -> throw IllegalStateException("Cannot open database: incorrect password")
+        }
+
+        reencryptDatabase(path, openedWith, keystoreKey)
+    }
+
+    private fun canOpenDatabase(path: String, password: String): Boolean {
+        return try {
+            net.zetetic.database.sqlcipher.SQLiteDatabase.openDatabase(
+                path, password, null,
+                net.zetetic.database.sqlcipher.SQLiteDatabase.OPEN_READONLY, null
+            ).use { true }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    private fun reencryptDatabase(path: String, oldPassword: String, newPassword: String) {
+        val tempFile = File(context.filesDir, "reencrypt_temp.db")
+        if (tempFile.exists()) tempFile.delete()
+        tempFile.createNewFile()
+
+        val sqlDb = net.zetetic.database.sqlcipher.SQLiteDatabase.openDatabase(
+            path, oldPassword, null,
+            net.zetetic.database.sqlcipher.SQLiteDatabase.OPEN_READWRITE, null
+        )
+        try {
+            sqlDb.execSQL("ATTACH DATABASE '${tempFile.absolutePath}' AS rekey KEY '$newPassword'")
+            sqlDb.rawQuery("SELECT sqlcipher_export('rekey')", null).use { it?.moveToFirst() }
+            sqlDb.execSQL("DETACH DATABASE rekey")
+        } finally {
+            sqlDb.close()
+        }
+
+        val srcFile = File(path)
+        srcFile.delete()
+        File("$path-wal").delete()
+        File("$path-shm").delete()
+        tempFile.renameTo(srcFile)
+    }
+
+    private fun deleteDbFiles(path: String) {
+        File(path).delete()
+        File("$path-wal").delete()
+        File("$path-shm").delete()
     }
 
     suspend fun insertNote(path: String?, encrypted: Boolean, password: String?, note: Note) {
@@ -112,55 +156,38 @@ class NoteRepository(private val context: Context) {
     ) {
         closeDatabase()
 
-        // Ensure SQLCipher is loaded before any database operation
         try {
             System.loadLibrary("sqlcipher")
         } catch (e: UnsatisfiedLinkError) {
-            android.util.Log.e("DNMW", "Failed to load sqlcipher library: ${e.message}", e)
-            throw e // Re-throw to indicate a critical setup error
+            if (BuildConfig.DEBUG) android.util.Log.e("DNMW", "Failed to load sqlcipher: ${e.message}", e)
+            throw e
         }
-        // Use the files directory for the temp file to avoid cache/permission issues with ATTACH
+
         val tempFile = File(context.filesDir, "export_temp.db")
         if (tempFile.exists()) tempFile.delete()
-        tempFile.createNewFile() // Ensure the file exists before ATTACH
+        tempFile.createNewFile()
 
-        // Use SQLCipher to export/rekey the database
-        val database = net.zetetic.database.sqlcipher.SQLiteDatabase.openDatabase(
-            sourcePath,
-            sourcePassword,
-            null,
-            net.zetetic.database.sqlcipher.SQLiteDatabase.OPEN_READWRITE,
-            null
+        val sqlDb = net.zetetic.database.sqlcipher.SQLiteDatabase.openDatabase(
+            sourcePath, sourcePassword, null,
+            net.zetetic.database.sqlcipher.SQLiteDatabase.OPEN_READWRITE, null
         )
 
         try {
             val alias = "export_db"
             val key = destPassword ?: ""
-
-            // Log for debugging (remove in production)
-            android.util.Log.d("DNMW", "Attaching temp DB: ${tempFile.absolutePath}")
-
-            // Try with simple string concatenation first, ensure path is valid
-            database.execSQL("ATTACH DATABASE '${tempFile.absolutePath}' AS $alias KEY '$key'")
-
-            database.rawQuery("SELECT sqlcipher_export('$alias')", null).use { cursor ->
-                cursor?.moveToFirst()
-            }
-
-            database.execSQL("DETACH DATABASE $alias")
+            sqlDb.execSQL("ATTACH DATABASE '${tempFile.absolutePath}' AS $alias KEY '$key'")
+            sqlDb.rawQuery("SELECT sqlcipher_export('$alias')", null).use { it?.moveToFirst() }
+            sqlDb.execSQL("DETACH DATABASE $alias")
         } catch (e: Exception) {
-            android.util.Log.e("DNMW", "Export failed at SQL level: ${e.message}", e)
+            if (BuildConfig.DEBUG) android.util.Log.e("DNMW", "Export failed: ${e.message}", e)
             throw e
         } finally {
-            database.close()
+            sqlDb.close()
         }
 
-        // Copy temp file to destination URI
         if (tempFile.exists() && tempFile.length() > 0) {
             context.contentResolver.openOutputStream(destUri)?.use { output ->
-                tempFile.inputStream().use { input ->
-                    input.copyTo(output)
-                }
+                tempFile.inputStream().use { input -> input.copyTo(output) }
             }
         }
         if (tempFile.exists()) tempFile.delete()

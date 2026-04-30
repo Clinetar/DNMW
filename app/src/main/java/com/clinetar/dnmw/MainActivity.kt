@@ -89,13 +89,31 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.defaultMinSize
+import androidx.compose.material3.TopAppBar
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import com.clinetar.dnmw.data.note.Note
 import com.clinetar.dnmw.ui.screens.CalculatorsScreen
 import com.clinetar.dnmw.ui.screens.ToolsScreenContent
 import java.io.File
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.FormatBold
+import androidx.compose.material.icons.filled.FormatItalic
+import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.filled.FormatStrikethrough
+import androidx.compose.material.icons.filled.Title
+import androidx.compose.material3.Surface
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -109,7 +127,6 @@ class MainActivity : ComponentActivity() {
             val pureBlackState by viewModel.pureBlackState.collectAsState()
             val databasePath by viewModel.databasePathState.collectAsState()
             val isEncrypted by viewModel.isEncryptedState.collectAsState()
-            val dbPassword by viewModel.dbPasswordState.collectAsState()
             val notes by viewModel.notesState.collectAsState()
             val favoriteNotes by viewModel.favoriteNotesState.collectAsState()
 
@@ -129,15 +146,14 @@ class MainActivity : ComponentActivity() {
                     onDatabaseNameChange = { viewModel.setDatabaseName(it) },
                     isEncrypted = isEncrypted,
                     onIsEncryptedChange = { viewModel.setIsEncrypted(it) },
-                    dbPassword = dbPassword,
-                    onDbPasswordChange = { viewModel.setDbPassword(it) },
                     notes = notes,
                     favoriteNotes = favoriteNotes,
                     onAddNote = { t, c -> viewModel.addNote(t, c) },
+                    onUpdateNote = { viewModel.updateNote(it) },
                     onDeleteNote = { viewModel.deleteNote(it) },
                     onToggleFavorite = { viewModel.toggleFavorite(it) },
                     onDeleteDatabase = { viewModel.deleteDatabase() },
-                    onImportDatabase = { viewModel.importDatabase(it) },
+                    onImportDatabase = { uri, pwd -> viewModel.importDatabase(uri, pwd) },
                     onExportDatabase = { uri, pwd, enc -> viewModel.exportDatabase(uri, pwd, enc) }
                 )
             }
@@ -157,72 +173,113 @@ fun DNMWApp(
     onDatabaseNameChange: (String) -> Unit = {},
     isEncrypted: Boolean = false,
     onIsEncryptedChange: (Boolean) -> Unit = {},
-    dbPassword: String? = null,
-    onDbPasswordChange: (String?) -> Unit = {},
     notes: List<Note> = emptyList(),
     favoriteNotes: List<Note> = emptyList(),
     onAddNote: (String, String) -> Unit = { _, _ -> },
+    onUpdateNote: (Note) -> Unit = {},
     onDeleteNote: (Note) -> Unit = {},
     onToggleFavorite: (Note) -> Unit = {},
     onDeleteDatabase: () -> Unit = {},
-    onImportDatabase: (android.net.Uri) -> Unit = {},
+    onImportDatabase: (android.net.Uri, String?) -> Unit = { _, _ -> },
     onExportDatabase: (android.net.Uri, String?, Boolean) -> Unit = { _, _, _ -> }
 ) {
     var currentDestination by rememberSaveable { mutableStateOf(AppDestinations.TOOLS) }
     var settingsDestination by rememberSaveable { mutableStateOf(SettingsSubDestination.MAIN) }
+    var noteInEditor by remember { mutableStateOf<Note?>(null) }
     val isNotesEnabled = !databasePath.isNullOrBlank()
 
-    NavigationSuiteScaffold(
-        navigationSuiteItems = {
-            AppDestinations.entries.forEach {
-                val enabled = it != AppDestinations.NOTES || isNotesEnabled
-                item(
-                    icon = {
-                        Icon(
-                            painterResource(it.icon),
-                            contentDescription = it.label,
-                            modifier = Modifier.alpha(if (enabled) 1f else 0.38f)
-                        )
-                    },
-                    label = { 
-                        Text(
-                            it.label, 
-                            modifier = Modifier.alpha(if (enabled) 1f else 0.38f)
-                        ) 
-                    },
-                    selected = it == currentDestination,
-                    onClick = { if (enabled) currentDestination = it },
-                    enabled = enabled
-                )
+    // From any non-home tab (with no note open), back navigates to Tools.
+    BackHandler(enabled = currentDestination != AppDestinations.TOOLS && noteInEditor == null) {
+        currentDestination = AppDestinations.TOOLS
+    }
+
+    AnimatedContent(
+        targetState = noteInEditor,
+        transitionSpec = {
+            if (targetState != null) {
+                (slideInHorizontally(tween(300)) { it } + fadeIn(tween(300)))
+                    .togetherWith(slideOutHorizontally(tween(300)) { -it / 3 } + fadeOut(tween(300)))
+            } else {
+                (slideInHorizontally(tween(300)) { -it / 3 } + fadeIn(tween(300)))
+                    .togetherWith(slideOutHorizontally(tween(300)) { it } + fadeOut(tween(300)))
             }
         },
-        containerColor = MaterialTheme.colorScheme.background,
-        navigationSuiteColors = NavigationSuiteDefaults.colors(
-            navigationBarContainerColor = Color.Transparent,
-            navigationRailContainerColor = Color.Transparent,
-            navigationDrawerContainerColor = Color.Transparent
-        )
-    ) {
-        Scaffold(
-            modifier = Modifier.fillMaxSize(),
-            containerColor = Color.Transparent
-        ) { innerPadding ->
-            Box(modifier = Modifier.padding(innerPadding)) {
-                when (currentDestination) {
-                    AppDestinations.TOOLS -> ToolsScreenContent()
-                    AppDestinations.CALCULATORS -> CalculatorsScreen()
-                    AppDestinations.NOTES -> NotesScreen(notes, onAddNote, onDeleteNote, onToggleFavorite)
-                    AppDestinations.FAVORITES -> FavoritesScreen(favoriteNotes, onToggleFavorite, onDeleteNote)
-                    AppDestinations.SETTINGS -> SettingsScreen(
-                        currentTheme, onThemeChange,
-                        currentCustomColor, onCustomColorChange,
-                        pureBlack, onPureBlackChange,
-                        settingsDestination, { settingsDestination = it },
-                        databasePath, onDatabaseNameChange,
-                        isEncrypted, onIsEncryptedChange,
-                        dbPassword, onDbPasswordChange,
-                        onDeleteDatabase, onImportDatabase, onExportDatabase
-                    )
+        label = "note_editor_root"
+    ) { editNote ->
+        if (editNote != null) {
+            val isNew = editNote.id == 0
+            NoteEditorScreen(
+                note = editNote,
+                onSave = { title, content ->
+                    if (isNew) onAddNote(title, content)
+                    else onUpdateNote(editNote.copy(title = title, content = content, timestamp = System.currentTimeMillis()))
+                },
+                onBack = { noteInEditor = null }
+            )
+        } else {
+            NavigationSuiteScaffold(
+                navigationSuiteItems = {
+                    AppDestinations.entries.forEach {
+                        val enabled = it != AppDestinations.NOTES || isNotesEnabled
+                        item(
+                            icon = {
+                                Icon(
+                                    painterResource(it.icon),
+                                    contentDescription = it.label,
+                                    modifier = Modifier.alpha(if (enabled) 1f else 0.38f)
+                                )
+                            },
+                            label = {
+                                Text(
+                                    it.label,
+                                    modifier = Modifier.alpha(if (enabled) 1f else 0.38f)
+                                )
+                            },
+                            selected = it == currentDestination,
+                            onClick = { if (enabled) currentDestination = it },
+                            enabled = enabled
+                        )
+                    }
+                },
+                containerColor = MaterialTheme.colorScheme.background,
+                navigationSuiteColors = NavigationSuiteDefaults.colors(
+                    navigationBarContainerColor = Color.Transparent,
+                    navigationRailContainerColor = Color.Transparent,
+                    navigationDrawerContainerColor = Color.Transparent
+                )
+            ) {
+                Scaffold(
+                    modifier = Modifier.fillMaxSize(),
+                    containerColor = Color.Transparent
+                ) { innerPadding ->
+                    Box(modifier = Modifier.padding(innerPadding)) {
+                        when (currentDestination) {
+                            AppDestinations.TOOLS -> ToolsScreenContent()
+                            AppDestinations.CALCULATORS -> CalculatorsScreen()
+                            AppDestinations.NOTES -> NotesScreen(
+                                notes = notes,
+                                onNewNote = { noteInEditor = Note(title = "", content = "") },
+                                onNoteClick = { noteInEditor = it },
+                                onDeleteNote = onDeleteNote,
+                                onToggleFavorite = onToggleFavorite
+                            )
+                            AppDestinations.FAVORITES -> FavoritesScreen(
+                                favoriteNotes = favoriteNotes,
+                                onNoteClick = { noteInEditor = it },
+                                onToggleFavorite = onToggleFavorite,
+                                onDeleteNote = onDeleteNote
+                            )
+                            AppDestinations.SETTINGS -> SettingsScreen(
+                                currentTheme, onThemeChange,
+                                currentCustomColor, onCustomColorChange,
+                                pureBlack, onPureBlackChange,
+                                settingsDestination, { settingsDestination = it },
+                                databasePath, onDatabaseNameChange,
+                                isEncrypted, onIsEncryptedChange,
+                                onDeleteDatabase, onImportDatabase, onExportDatabase
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -233,6 +290,7 @@ fun DNMWApp(
 @Composable
 fun FavoritesScreen(
     favoriteNotes: List<Note>,
+    onNoteClick: (Note) -> Unit,
     onToggleFavorite: (Note) -> Unit,
     onDeleteNote: (Note) -> Unit
 ) {
@@ -261,17 +319,11 @@ fun FavoritesScreen(
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                         placeholder = { Text("Search favorites...") },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                         trailingIcon = if (searchQuery.isNotEmpty()) {
-                            {
-                                IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Clear")
-                                }
-                            }
+                            { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Close, contentDescription = "Clear") } }
                         } else null,
                         shape = MaterialTheme.shapes.extraLarge,
                         singleLine = true
@@ -283,35 +335,15 @@ fun FavoritesScreen(
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
             if (favoriteNotes.isEmpty()) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        Icons.Default.FavoriteBorder,
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp).alpha(0.3f)
-                    )
+                Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.FavoriteBorder, contentDescription = null, modifier = Modifier.size(64.dp).alpha(0.3f))
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        "No favorites yet",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                    Text("No favorites yet", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(16.dp)
-                ) {
+                LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(16.dp)) {
                     items(filteredNotes) { note ->
-                        NoteItem(
-                            note = note,
-                            onDelete = { onDeleteNote(note) },
-                            onToggleFavorite = { onToggleFavorite(note) }
-                        )
+                        NoteItem(note = note, onClick = { onNoteClick(note) }, onDelete = { onDeleteNote(note) }, onToggleFavorite = { onToggleFavorite(note) })
                     }
                     item { Spacer(modifier = Modifier.height(80.dp)) }
                 }
@@ -320,16 +352,15 @@ fun FavoritesScreen(
     }
 }
 
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NotesScreen(
     notes: List<Note>,
-    onAddNote: (String, String) -> Unit,
+    onNewNote: () -> Unit,
+    onNoteClick: (Note) -> Unit,
     onDeleteNote: (Note) -> Unit,
     onToggleFavorite: (Note) -> Unit
 ) {
-    var showAddDialog by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
     val filteredNotes = remember(notes, searchQuery) {
         notes.filter {
@@ -355,17 +386,11 @@ fun NotesScreen(
                     OutlinedTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                         placeholder = { Text("Search notes...") },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                         trailingIcon = if (searchQuery.isNotEmpty()) {
-                            {
-                                IconButton(onClick = { searchQuery = "" }) {
-                                    Icon(Icons.Default.Close, contentDescription = "Clear")
-                                }
-                            }
+                            { IconButton(onClick = { searchQuery = "" }) { Icon(Icons.Default.Close, contentDescription = "Clear") } }
                         } else null,
                         shape = MaterialTheme.shapes.extraLarge,
                         singleLine = true
@@ -375,7 +400,7 @@ fun NotesScreen(
         },
         floatingActionButton = {
             FloatingActionButton(
-                onClick = { showAddDialog = true },
+                onClick = onNewNote,
                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                 contentColor = MaterialTheme.colorScheme.onPrimaryContainer
             ) {
@@ -386,64 +411,31 @@ fun NotesScreen(
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
             if (notes.isEmpty()) {
-                Column(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.Center,
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        painterResource(R.drawable.ic_notes),
-                        contentDescription = null,
-                        modifier = Modifier.size(64.dp).alpha(0.3f)
-                    )
+                Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(painterResource(R.drawable.ic_notes), contentDescription = null, modifier = Modifier.size(64.dp).alpha(0.3f))
                     Spacer(modifier = Modifier.height(16.dp))
-                    Text(
-                        "No notes yet",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        "Tap + to add your first note",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                    )
+                    Text("No notes yet", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Tap + to add your first note", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                    contentPadding = PaddingValues(16.dp)
-                ) {
+                LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp), contentPadding = PaddingValues(16.dp)) {
                     items(filteredNotes) { note ->
-                        NoteItem(
-                            note = note,
-                            onDelete = { onDeleteNote(note) },
-                            onToggleFavorite = { onToggleFavorite(note) }
-                        )
+                        NoteItem(note = note, onClick = { onNoteClick(note) }, onDelete = { onDeleteNote(note) }, onToggleFavorite = { onToggleFavorite(note) })
                     }
                     item { Spacer(modifier = Modifier.height(80.dp)) }
                 }
             }
         }
     }
-
-    if (showAddDialog) {
-        AddNoteDialog(
-            onDismiss = { showAddDialog = false },
-            onConfirm = { title, content ->
-                onAddNote(title, content)
-                showAddDialog = false
-            }
-        )
-    }
 }
 
 @Composable
-fun NoteItem(note: Note, onDelete: () -> Unit, onToggleFavorite: () -> Unit) {
+fun NoteItem(note: Note, onClick: () -> Unit, onDelete: () -> Unit, onToggleFavorite: () -> Unit) {
     val dateFormatter = remember { SimpleDateFormat("MMM dd, yyyy • HH:mm", Locale.getDefault()) }
     val dateString = dateFormatter.format(Date(note.timestamp))
 
     Card(
+        onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         shape = MaterialTheme.shapes.extraLarge,
     ) {
@@ -484,51 +476,184 @@ fun NoteItem(note: Note, onDelete: () -> Unit, onToggleFavorite: () -> Unit) {
                 Text(
                     text = note.content,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 3,
                 )
             }
         }
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddNoteDialog(onDismiss: () -> Unit, onConfirm: (String, String) -> Unit) {
-    var title by remember { mutableStateOf("") }
-    var content by remember { mutableStateOf("") }
+fun NoteEditorScreen(
+    note: Note,
+    onSave: (title: String, content: String) -> Unit,
+    onBack: () -> Unit
+) {
+    var title by remember { mutableStateOf(note.title) }
+    var contentValue by remember { mutableStateOf(TextFieldValue(note.content)) }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("New Note") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = title,
-                    onValueChange = { title = it },
-                    label = { Text("Title") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = content,
-                    onValueChange = { content = it },
-                    label = { Text("Content") },
-                    modifier = Modifier.fillMaxWidth(),
-                    minLines = 3
-                )
-            }
+    fun saveAndBack() {
+        if (title.isNotBlank()) onSave(title.trim(), contentValue.text)
+        onBack()
+    }
+
+    BackHandler { saveAndBack() }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {},
+                navigationIcon = {
+                    IconButton(onClick = { saveAndBack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
         },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(title, content) },
-                enabled = title.isNotBlank()
+        containerColor = MaterialTheme.colorScheme.background
+    ) { padding ->
+        Box(
+            modifier = Modifier
+                .padding(padding)
+                .fillMaxSize()
+                .imePadding()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp)
+                    .padding(bottom = 64.dp)
             ) {
-                Text("Add")
+                BasicTextField(
+                    value = title,
+                    onValueChange = { if (it.length <= 200) title = it },
+                    textStyle = MaterialTheme.typography.headlineMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    decorationBox = { inner ->
+                        Box {
+                            if (title.isEmpty()) {
+                                Text(
+                                    "Title",
+                                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                )
+                            }
+                            inner()
+                        }
+                    }
+                )
+                Spacer(Modifier.height(16.dp))
+                BasicTextField(
+                    value = contentValue,
+                    onValueChange = { if (it.text.length <= 10_000) contentValue = it },
+                    textStyle = MaterialTheme.typography.bodyLarge.copy(
+                        color = MaterialTheme.colorScheme.onSurface
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .defaultMinSize(minHeight = 300.dp),
+                    cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                    decorationBox = { inner ->
+                        Box {
+                            if (contentValue.text.isEmpty()) {
+                                Text(
+                                    "Start writing...",
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                                )
+                            }
+                            inner()
+                        }
+                    }
+                )
+                Spacer(Modifier.height(80.dp))
             }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
+            FormatBar(
+                value = contentValue,
+                onValueChange = { contentValue = it },
+                modifier = Modifier.align(Alignment.BottomCenter)
+            )
         }
+    }
+}
+
+@Composable
+private fun FormatBar(
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        modifier = modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 4.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            FormatIconButton(Icons.Default.FormatBold, "Bold") { onValueChange(applyInlineFormat(value, "**")) }
+            FormatIconButton(Icons.Default.FormatItalic, "Italic") { onValueChange(applyInlineFormat(value, "*")) }
+            FormatIconButton(Icons.Default.FormatStrikethrough, "Strikethrough") { onValueChange(applyInlineFormat(value, "~~")) }
+            FormatIconButton(Icons.Default.Code, "Code") { onValueChange(applyInlineFormat(value, "`")) }
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(24.dp)
+                    .background(MaterialTheme.colorScheme.outlineVariant)
+            )
+            FormatIconButton(Icons.Default.Title, "Heading") { onValueChange(applyLinePrefix(value, "# ")) }
+            FormatIconButton(Icons.AutoMirrored.Filled.FormatListBulleted, "Bullet list") { onValueChange(applyLinePrefix(value, "- ")) }
+        }
+    }
+}
+
+@Composable
+private fun FormatIconButton(icon: ImageVector, description: String, onClick: () -> Unit) {
+    IconButton(onClick = onClick) {
+        Icon(
+            imageVector = icon,
+            contentDescription = description,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+private fun applyInlineFormat(value: TextFieldValue, marker: String): TextFieldValue {
+    val text = value.text
+    val sel = value.selection
+    return if (sel.collapsed) {
+        value.copy(
+            text = text.substring(0, sel.start) + marker + marker + text.substring(sel.start),
+            selection = TextRange(sel.start + marker.length)
+        )
+    } else {
+        val selected = text.substring(sel.min, sel.max)
+        val newText = text.substring(0, sel.min) + marker + selected + marker + text.substring(sel.max)
+        value.copy(
+            text = newText,
+            selection = TextRange(sel.min + marker.length, sel.max + marker.length)
+        )
+    }
+}
+
+private fun applyLinePrefix(value: TextFieldValue, prefix: String): TextFieldValue {
+    val text = value.text
+    val lineStart = text.lastIndexOf('\n', value.selection.start - 1) + 1
+    val newText = text.substring(0, lineStart) + prefix + text.substring(lineStart)
+    return value.copy(
+        text = newText,
+        selection = TextRange(value.selection.start + prefix.length, value.selection.end + prefix.length)
     )
 }
 
@@ -546,10 +671,8 @@ fun SettingsScreen(
     onDatabaseNameChange: (String) -> Unit,
     isEncrypted: Boolean,
     onIsEncryptedChange: (Boolean) -> Unit,
-    dbPassword: String?,
-    onDbPasswordChange: (String?) -> Unit,
     onDeleteDatabase: () -> Unit,
-    onImportDatabase: (android.net.Uri) -> Unit,
+    onImportDatabase: (android.net.Uri, String?) -> Unit,
     onExportDatabase: (android.net.Uri, String?, Boolean) -> Unit
 ) {
     AnimatedContent(
@@ -584,7 +707,6 @@ fun SettingsScreen(
                         onDatabaseNameChange(name)
                     },
                     isEncrypted, onIsEncryptedChange,
-                    dbPassword, onDbPasswordChange,
                     onDeleteDatabase, onImportDatabase, onExportDatabase,
                     onBack = { onSettingsDestinationChange(SettingsSubDestination.MAIN) }
                 )
@@ -628,10 +750,8 @@ fun DatabaseSettingsSubScreen(
     onCreateDatabase: (String) -> Unit,
     isEncrypted: Boolean,
     onIsEncryptedChange: (Boolean) -> Unit,
-    dbPassword: String?,
-    onDbPasswordChange: (String?) -> Unit,
     onDeleteDatabase: () -> Unit,
-    onImportDatabase: (android.net.Uri) -> Unit,
+    onImportDatabase: (android.net.Uri, String?) -> Unit,
     onExportDatabase: (android.net.Uri, String?, Boolean) -> Unit,
     onBack: () -> Unit
 ) {
@@ -639,11 +759,18 @@ fun DatabaseSettingsSubScreen(
     var showCreateDialog by remember { mutableStateOf(false) }
     var showDeleteConfirm by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
+    var showImportDialog by remember { mutableStateOf(false) }
     var pendingExportUri by remember { mutableStateOf<android.net.Uri?>(null) }
-    
+    var pendingImportUri by remember { mutableStateOf<android.net.Uri?>(null) }
+
     val importLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
-        onResult = { uri -> uri?.let { onImportDatabase(it) } }
+        onResult = { uri ->
+            uri?.let {
+                pendingImportUri = it
+                showImportDialog = true
+            }
+        }
     )
 
     val exportLauncher = rememberLauncherForActivityResult(
@@ -755,9 +882,23 @@ fun DatabaseSettingsSubScreen(
         )
     }
 
+    if (showImportDialog && pendingImportUri != null) {
+        ImportDatabaseDialog(
+            onDismiss = {
+                showImportDialog = false
+                pendingImportUri = null
+            },
+            onConfirm = { password ->
+                onImportDatabase(pendingImportUri!!, password.ifBlank { null })
+                showImportDialog = false
+                pendingImportUri = null
+            }
+        )
+    }
+
     if (showExportDialog && pendingExportUri != null) {
         ExportDatabaseDialog(
-            onDismiss = { 
+            onDismiss = {
                 showExportDialog = false
                 pendingExportUri = null
             },
@@ -789,6 +930,42 @@ fun DatabaseSettingsSubScreen(
             }
         )
     }
+}
+
+@Composable
+fun ImportDatabaseDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit
+) {
+    var password by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Import Database") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("If this database was exported with a password, enter it below. Leave blank if it was exported without encryption.")
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Password (optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    singleLine = true
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onConfirm(password) }) {
+                Text("Import")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
 
 @Composable
@@ -843,12 +1020,15 @@ fun ExportDatabaseDialog(
     )
 }
 
+private val DB_NAME_REGEX = Regex("^[a-zA-Z0-9_\\-]{1,50}$")
+
 @Composable
 fun CreateDatabaseDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit
 ) {
     var name by remember { mutableStateOf("notes") }
+    val isNameValid = name.matches(DB_NAME_REGEX)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -857,9 +1037,14 @@ fun CreateDatabaseDialog(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = { if (it.length <= 50) name = it },
                     label = { Text("File Name") },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    isError = name.isNotEmpty() && !isNameValid,
+                    supportingText = {
+                        if (name.isNotEmpty() && !isNameValid)
+                            Text("Only letters, numbers, underscores, and hyphens allowed")
+                    }
                 )
                 Text(
                     "The database will be encrypted using an internal key for your security.",
@@ -869,7 +1054,7 @@ fun CreateDatabaseDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onConfirm(name) }, enabled = name.isNotBlank()) {
+            TextButton(onClick = { onConfirm(name) }, enabled = isNameValid) {
                 Text("Create")
             }
         },

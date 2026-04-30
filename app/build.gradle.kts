@@ -37,6 +37,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     packaging {
         jniLibs {
@@ -67,6 +68,9 @@ dependencies {
     // SQLCipher for Encryption
     implementation(libs.sqlcipher)
     implementation(libs.sqlite.ktx)
+
+    // Keystore-backed encrypted storage
+    implementation(libs.androidx.security.crypto)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
