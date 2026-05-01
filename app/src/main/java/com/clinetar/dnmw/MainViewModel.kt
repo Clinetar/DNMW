@@ -25,9 +25,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val customColorState: StateFlow<CustomColor> = themeSettings.customColorStream
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), CustomColor.DYNAMIC)
 
-    val pureBlackState: StateFlow<Boolean> = themeSettings.pureBlackStream
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-
     val databasePathState: StateFlow<String?> = themeSettings.databasePathStream
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
@@ -63,10 +60,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setCustomColor(color: CustomColor) {
         viewModelScope.launch { themeSettings.setCustomColor(color) }
-    }
-
-    fun setPureBlack(enabled: Boolean) {
-        viewModelScope.launch { themeSettings.setPureBlack(enabled) }
     }
 
     fun setDatabaseName(name: String) {

@@ -22,25 +22,25 @@ import com.clinetar.dnmw.ui.screens.calculators.StandardCalculatorScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CalculatorsScreen() {
-    var selectedCalculator by remember { mutableStateOf<String?>(null) }
-
+fun CalculatorsScreen(
+    selectedCalculator: String? = null,
+    onSelectedCalculatorChange: (String?) -> Unit = {}
+) {
     AnimatedContent(
         targetState = selectedCalculator,
         label = "calc_nav"
     ) { calcName ->
         if (calcName == null) {
-            CalculatorsListScreen(onSelect = { selectedCalculator = it })
+            CalculatorsListScreen(onSelect = { onSelectedCalculatorChange(it) })
         } else {
             when (calcName) {
-                "Standard" -> StandardCalculatorScreen(onBack = { selectedCalculator = null })
-                "BMI" -> BMICalculatorScreen(onBack = { selectedCalculator = null })
+                "Standard" -> StandardCalculatorScreen(onBack = { onSelectedCalculatorChange(null) })
+                "BMI" -> BMICalculatorScreen(onBack = { onSelectedCalculatorChange(null) })
                 else -> {
-                    // Fallback for not implemented
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text("Calculator Not Implemented Yet")
-                            Button(onClick = { selectedCalculator = null }) { Text("Back") }
+                            Button(onClick = { onSelectedCalculatorChange(null) }) { Text("Back") }
                         }
                     }
                 }
@@ -54,14 +54,7 @@ fun CalculatorsScreen() {
 fun CalculatorsListScreen(onSelect: (String) -> Unit) {
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
     
-    val calculators = listOf(
-        CalculatorItem("Standard", "Basic arithmetic", Icons.Default.Calculate),
-        CalculatorItem("Scientific", "Advanced math functions", Icons.Default.Calculate),
-        CalculatorItem("Unit Converter", "Length, weight, temp, etc.", Icons.Default.Calculate),
-        CalculatorItem("Currency", "Real-time exchange rates", Icons.Default.Calculate),
-        CalculatorItem("BMI", "Health and fitness", Icons.Default.Calculate),
-        CalculatorItem("Loan", "Mortgage and interest", Icons.Default.Calculate)
-    )
+    val calculators = allCalculators
 
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
@@ -92,6 +85,15 @@ fun CalculatorsListScreen(onSelect: (String) -> Unit) {
 }
 
 data class CalculatorItem(val name: String, val description: String, val icon: ImageVector)
+
+val allCalculators = listOf(
+    CalculatorItem("Standard", "Basic arithmetic", Icons.Default.Calculate),
+    CalculatorItem("Scientific", "Advanced math functions", Icons.Default.Calculate),
+    CalculatorItem("Unit Converter", "Length, weight, temp, etc.", Icons.Default.Calculate),
+    CalculatorItem("Currency", "Real-time exchange rates", Icons.Default.Calculate),
+    CalculatorItem("BMI", "Health and fitness", Icons.Default.Calculate),
+    CalculatorItem("Loan", "Mortgage and interest", Icons.Default.Calculate)
+)
 
 @Composable
 fun CalculatorCard(item: CalculatorItem, onClick: () -> Unit) {

@@ -124,7 +124,6 @@ class MainActivity : ComponentActivity() {
             val viewModel: MainViewModel = viewModel()
             val themeState by viewModel.themeState.collectAsState()
             val customColorState by viewModel.customColorState.collectAsState()
-            val pureBlackState by viewModel.pureBlackState.collectAsState()
             val databasePath by viewModel.databasePathState.collectAsState()
             val isEncrypted by viewModel.isEncryptedState.collectAsState()
             val notes by viewModel.notesState.collectAsState()
@@ -132,16 +131,13 @@ class MainActivity : ComponentActivity() {
 
             DNMWTheme(
                 appTheme = themeState,
-                customColor = customColorState,
-                pureBlack = pureBlackState
+                customColor = customColorState
             ) {
                 DNMWApp(
                     currentTheme = themeState,
                     onThemeChange = { viewModel.setTheme(it) },
                     currentCustomColor = customColorState,
                     onCustomColorChange = { viewModel.setCustomColor(it) },
-                    pureBlack = pureBlackState,
-                    onPureBlackChange = { viewModel.setPureBlack(it) },
                     databasePath = databasePath,
                     onDatabaseNameChange = { viewModel.setDatabaseName(it) },
                     isEncrypted = isEncrypted,
@@ -167,8 +163,6 @@ fun DNMWApp(
     onThemeChange: (AppTheme) -> Unit = {},
     currentCustomColor: CustomColor = CustomColor.DYNAMIC,
     onCustomColorChange: (CustomColor) -> Unit = {},
-    pureBlack: Boolean = false,
-    onPureBlackChange: (Boolean) -> Unit = {},
     databasePath: String? = null,
     onDatabaseNameChange: (String) -> Unit = {},
     isEncrypted: Boolean = false,
@@ -186,6 +180,7 @@ fun DNMWApp(
     var currentDestination by rememberSaveable { mutableStateOf(AppDestinations.TOOLS) }
     var settingsDestination by rememberSaveable { mutableStateOf(SettingsSubDestination.MAIN) }
     var noteInEditor by remember { mutableStateOf<Note?>(null) }
+    var selectedCalculator by rememberSaveable { mutableStateOf<String?>(null) }
     val isNotesEnabled = !databasePath.isNullOrBlank()
 
     // From any non-home tab (with no note open), back navigates to Tools.
@@ -254,8 +249,18 @@ fun DNMWApp(
                 ) { innerPadding ->
                     Box(modifier = Modifier.padding(innerPadding)) {
                         when (currentDestination) {
-                            AppDestinations.TOOLS -> ToolsScreenContent()
-                            AppDestinations.CALCULATORS -> CalculatorsScreen()
+                            AppDestinations.TOOLS -> ToolsScreenContent(
+                                notes = notes,
+                                onNavigateToCalculator = { name ->
+                                    currentDestination = AppDestinations.CALCULATORS
+                                    selectedCalculator = name
+                                },
+                                onNavigateToNote = { note -> noteInEditor = note }
+                            )
+                            AppDestinations.CALCULATORS -> CalculatorsScreen(
+                                selectedCalculator = selectedCalculator,
+                                onSelectedCalculatorChange = { selectedCalculator = it }
+                            )
                             AppDestinations.NOTES -> NotesScreen(
                                 notes = notes,
                                 onNewNote = { noteInEditor = Note(title = "", content = "") },
@@ -272,7 +277,6 @@ fun DNMWApp(
                             AppDestinations.SETTINGS -> SettingsScreen(
                                 currentTheme, onThemeChange,
                                 currentCustomColor, onCustomColorChange,
-                                pureBlack, onPureBlackChange,
                                 settingsDestination, { settingsDestination = it },
                                 databasePath, onDatabaseNameChange,
                                 isEncrypted, onIsEncryptedChange,
@@ -663,8 +667,6 @@ fun SettingsScreen(
     onThemeChange: (AppTheme) -> Unit,
     currentCustomColor: CustomColor,
     onCustomColorChange: (CustomColor) -> Unit,
-    pureBlack: Boolean,
-    onPureBlackChange: (Boolean) -> Unit,
     settingsDestination: SettingsSubDestination,
     onSettingsDestinationChange: (SettingsSubDestination) -> Unit,
     databasePath: String?,
@@ -694,7 +696,6 @@ fun SettingsScreen(
                 ThemeSettingsSubScreen(
                     currentTheme, onThemeChange,
                     currentCustomColor, onCustomColorChange,
-                    pureBlack, onPureBlackChange,
                     onBack = { onSettingsDestinationChange(SettingsSubDestination.MAIN) }
                 )
             }
@@ -1073,8 +1074,6 @@ fun ThemeSettingsSubScreen(
     onThemeChange: (AppTheme) -> Unit,
     currentCustomColor: CustomColor,
     onCustomColorChange: (CustomColor) -> Unit,
-    pureBlack: Boolean,
-    onPureBlackChange: (Boolean) -> Unit,
     onBack: () -> Unit
 ) {
     val themeExpanded = remember { mutableStateOf(false) }
@@ -1150,40 +1149,6 @@ fun ThemeSettingsSubScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Pure Black Switch
-        val isDark = when (currentTheme) {
-            AppTheme.LIGHT -> false
-            AppTheme.DARK -> true
-            AppTheme.SYSTEM -> isSystemInDarkTheme()
-        }
-        
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    "Pure Black (Dark Mode)", 
-                    color = if (isDark) Color.Unspecified else Color.Gray
-                )
-                if (!isDark) {
-                    Text(
-                        "Pure Black theme requires dark mode",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.Gray
-                    )
-                }
-            }
-            Switch(
-                checked = pureBlack,
-                onCheckedChange = { onPureBlackChange(it) },
-                enabled = isDark
-            )
-        }
     }
 }
 

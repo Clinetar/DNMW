@@ -31,7 +31,6 @@ class ThemeSettings(private val context: Context) {
     companion object {
         val THEME_KEY = stringPreferencesKey("theme_setting")
         val COLOR_KEY = stringPreferencesKey("custom_color")
-        val PURE_BLACK_KEY = booleanPreferencesKey("pure_black")
         val DATABASE_PATH_KEY = stringPreferencesKey("database_path")
         val IS_ENCRYPTED_KEY = booleanPreferencesKey("is_encrypted")
     }
@@ -48,9 +47,6 @@ class ThemeSettings(private val context: Context) {
             try { CustomColor.valueOf(colorName) } catch (e: Exception) { CustomColor.DYNAMIC }
         }
 
-    val pureBlackStream: Flow<Boolean> = context.dataStore.data
-        .map { it[PURE_BLACK_KEY] ?: false }
-
     val databasePathStream: Flow<String?> = context.dataStore.data
         .map { it[DATABASE_PATH_KEY] }
 
@@ -63,10 +59,6 @@ class ThemeSettings(private val context: Context) {
 
     suspend fun setCustomColor(color: CustomColor) {
         context.dataStore.edit { it[COLOR_KEY] = color.name }
-    }
-
-    suspend fun setPureBlack(enabled: Boolean) {
-        context.dataStore.edit { it[PURE_BLACK_KEY] = enabled }
     }
 
     suspend fun setDatabasePath(path: String) {

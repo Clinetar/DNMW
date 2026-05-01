@@ -39,7 +39,6 @@ private val LightColorScheme = lightColorScheme(
 fun DNMWTheme(
     appTheme: AppTheme = AppTheme.SYSTEM,
     customColor: CustomColor = CustomColor.DYNAMIC,
-    pureBlack: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val darkTheme = when (appTheme) {
@@ -51,23 +50,12 @@ fun DNMWTheme(
     val colorScheme = when {
         customColor == CustomColor.DYNAMIC && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
-            val scheme = if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-            if (darkTheme && pureBlack) {
-                scheme.copy(
-                    background = Color.Black,
-                    surface = Color.Black,
-                    surfaceVariant = Color(0xFF121212),
-                    onBackground = Color.White,
-                    onSurface = Color.White
-                )
-            } else {
-                scheme
-            }
+            if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
         customColor.hex != null -> {
             val seedColor = Color(customColor.hex)
             if (darkTheme) {
-                val baseDark = if (pureBlack) Color.Black else blend(Color(0xFF121212), seedColor, 0.05f)
+                val baseDark = blend(Color(0xFF121212), seedColor, 0.05f)
                 darkColorScheme(
                     primary = seedColor,
                     onPrimary = Color.Black,
@@ -98,17 +86,7 @@ fun DNMWTheme(
                 )
             }
         }
-        darkTheme -> {
-            if (pureBlack) {
-                DarkColorScheme.copy(
-                    background = Color.Black,
-                    surface = Color.Black,
-                    surfaceVariant = Color(0xFF121212)
-                )
-            } else {
-                DarkColorScheme
-            }
-        }
+        darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }
 
