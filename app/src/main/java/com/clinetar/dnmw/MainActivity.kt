@@ -111,9 +111,8 @@ import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.Title
 import androidx.compose.material3.Surface
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.TextFieldValue
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -437,6 +436,8 @@ fun NotesScreen(
 fun NoteItem(note: Note, onClick: () -> Unit, onDelete: () -> Unit, onToggleFavorite: () -> Unit) {
     val dateFormatter = remember { SimpleDateFormat("MMM dd, yyyy • HH:mm", Locale.getDefault()) }
     val dateString = dateFormatter.format(Date(note.timestamp))
+    val previewText = remember(note.content) { deserializeRichContent(note.content).first }
+    var showDeleteConfirm by remember { mutableStateOf(false) }
 
     Card(
         onClick = onClick,
@@ -466,7 +467,7 @@ fun NoteItem(note: Note, onClick: () -> Unit, onDelete: () -> Unit, onToggleFavo
                             tint = if (note.isFavorite) Color.Red else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    IconButton(onClick = onDelete) {
+                    IconButton(onClick = { showDeleteConfirm = true }) {
                         Icon(
                             Icons.Default.Delete,
                             contentDescription = "Delete",
@@ -475,16 +476,37 @@ fun NoteItem(note: Note, onClick: () -> Unit, onDelete: () -> Unit, onToggleFavo
                     }
                 }
             }
-            if (note.content.isNotBlank()) {
+            if (previewText.isNotBlank()) {
                 Spacer(modifier = Modifier.height(12.dp))
                 Text(
-                    text = note.content,
+                    text = previewText,
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 3,
                 )
             }
         }
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirm = false },
+            title = { Text("Delete Note?") },
+            text = { Text("\"${note.title}\" will be permanently deleted.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDelete()
+                    showDeleteConfirm = false
+                }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirm = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
@@ -496,10 +518,10 @@ fun NoteEditorScreen(
     onBack: () -> Unit
 ) {
     var title by remember { mutableStateOf(note.title) }
-    var contentValue by remember { mutableStateOf(TextFieldValue(note.content)) }
+    val richState = remember { RichTextState(note.content) }
 
     fun saveAndBack() {
-        if (title.isNotBlank()) onSave(title.trim(), contentValue.text)
+        if (title.isNotBlank()) onSave(title.trim(), richState.serialize())
         onBack()
     }
 
@@ -556,8 +578,8 @@ fun NoteEditorScreen(
                 )
                 Spacer(Modifier.height(16.dp))
                 BasicTextField(
-                    value = contentValue,
-                    onValueChange = { if (it.text.length <= 10_000) contentValue = it },
+                    value = richState.textFieldValue,
+                    onValueChange = { if (it.text.length <= 10_000) richState.onValueChange(it) },
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                         color = MaterialTheme.colorScheme.onSurface
                     ),
@@ -567,7 +589,7 @@ fun NoteEditorScreen(
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     decorationBox = { inner ->
                         Box {
-                            if (contentValue.text.isEmpty()) {
+                            if (richState.textFieldValue.text.isEmpty()) {
                                 Text(
                                     "Start writing...",
                                     style = MaterialTheme.typography.bodyLarge,
@@ -581,8 +603,7 @@ fun NoteEditorScreen(
                 Spacer(Modifier.height(80.dp))
             }
             FormatBar(
-                value = contentValue,
-                onValueChange = { contentValue = it },
+                richState = richState,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
         }
@@ -591,8 +612,7 @@ fun NoteEditorScreen(
 
 @Composable
 private fun FormatBar(
-    value: TextFieldValue,
-    onValueChange: (TextFieldValue) -> Unit,
+    richState: RichTextState,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -606,18 +626,18 @@ private fun FormatBar(
                 .padding(horizontal = 4.dp, vertical = 2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            FormatIconButton(Icons.Default.FormatBold, "Bold") { onValueChange(applyInlineFormat(value, "**")) }
-            FormatIconButton(Icons.Default.FormatItalic, "Italic") { onValueChange(applyInlineFormat(value, "*")) }
-            FormatIconButton(Icons.Default.FormatStrikethrough, "Strikethrough") { onValueChange(applyInlineFormat(value, "~~")) }
-            FormatIconButton(Icons.Default.Code, "Code") { onValueChange(applyInlineFormat(value, "`")) }
+            FormatIconButton(Icons.Default.FormatBold, "Bold") { richState.applyFormat(RichFormat.BOLD) }
+            FormatIconButton(Icons.Default.FormatItalic, "Italic") { richState.applyFormat(RichFormat.ITALIC) }
+            FormatIconButton(Icons.Default.FormatStrikethrough, "Strikethrough") { richState.applyFormat(RichFormat.STRIKETHROUGH) }
+            FormatIconButton(Icons.Default.Code, "Code") { richState.applyFormat(RichFormat.CODE) }
             Box(
                 modifier = Modifier
                     .width(1.dp)
                     .height(24.dp)
                     .background(MaterialTheme.colorScheme.outlineVariant)
             )
-            FormatIconButton(Icons.Default.Title, "Heading") { onValueChange(applyLinePrefix(value, "# ")) }
-            FormatIconButton(Icons.AutoMirrored.Filled.FormatListBulleted, "Bullet list") { onValueChange(applyLinePrefix(value, "- ")) }
+            FormatIconButton(Icons.Default.Title, "Heading") { richState.applyFormat(RichFormat.HEADING) }
+            FormatIconButton(Icons.AutoMirrored.Filled.FormatListBulleted, "Bullet list") { richState.applyFormat(RichFormat.BULLET) }
         }
     }
 }
@@ -633,33 +653,6 @@ private fun FormatIconButton(icon: ImageVector, description: String, onClick: ()
     }
 }
 
-private fun applyInlineFormat(value: TextFieldValue, marker: String): TextFieldValue {
-    val text = value.text
-    val sel = value.selection
-    return if (sel.collapsed) {
-        value.copy(
-            text = text.substring(0, sel.start) + marker + marker + text.substring(sel.start),
-            selection = TextRange(sel.start + marker.length)
-        )
-    } else {
-        val selected = text.substring(sel.min, sel.max)
-        val newText = text.substring(0, sel.min) + marker + selected + marker + text.substring(sel.max)
-        value.copy(
-            text = newText,
-            selection = TextRange(sel.min + marker.length, sel.max + marker.length)
-        )
-    }
-}
-
-private fun applyLinePrefix(value: TextFieldValue, prefix: String): TextFieldValue {
-    val text = value.text
-    val lineStart = text.lastIndexOf('\n', value.selection.start - 1) + 1
-    val newText = text.substring(0, lineStart) + prefix + text.substring(lineStart)
-    return value.copy(
-        text = newText,
-        selection = TextRange(value.selection.start + prefix.length, value.selection.end + prefix.length)
-    )
-}
 
 @Composable
 fun SettingsScreen(
@@ -1129,6 +1122,15 @@ fun ThemeSettingsSubScreen(
             Text("Theme Color", modifier = Modifier.weight(1f))
             Box {
                 OutlinedButton(onClick = { colorExpanded.value = true }) {
+                    Box(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .background(
+                                color = if (currentCustomColor.hex != null) Color(currentCustomColor.hex) else MaterialTheme.colorScheme.primary,
+                                shape = CircleShape
+                            )
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
                     Text(currentCustomColor.colorName)
                     Icon(Icons.Default.ArrowDropDown, contentDescription = null)
                 }
@@ -1138,7 +1140,22 @@ fun ThemeSettingsSubScreen(
                 ) {
                     CustomColor.entries.forEach { color ->
                         DropdownMenuItem(
-                            text = { Text(color.colorName) },
+                            text = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(16.dp)
+                                            .background(
+                                                color = if (color.hex != null) Color(color.hex) else MaterialTheme.colorScheme.primary,
+                                                shape = CircleShape
+                                            )
+                                    )
+                                    Text(color.colorName)
+                                }
+                            },
                             onClick = {
                                 onCustomColorChange(color)
                                 colorExpanded.value = false

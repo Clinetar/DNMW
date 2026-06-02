@@ -17,8 +17,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.activity.compose.BackHandler
 import com.clinetar.dnmw.ui.screens.calculators.BMICalculatorScreen
 import com.clinetar.dnmw.ui.screens.calculators.StandardCalculatorScreen
+import com.clinetar.dnmw.ui.screens.ComingSoonScreen
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -33,17 +35,11 @@ fun CalculatorsScreen(
         if (calcName == null) {
             CalculatorsListScreen(onSelect = { onSelectedCalculatorChange(it) })
         } else {
+            BackHandler { onSelectedCalculatorChange(null) }
             when (calcName) {
                 "Standard" -> StandardCalculatorScreen(onBack = { onSelectedCalculatorChange(null) })
                 "BMI" -> BMICalculatorScreen(onBack = { onSelectedCalculatorChange(null) })
-                else -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Calculator Not Implemented Yet")
-                            Button(onClick = { onSelectedCalculatorChange(null) }) { Text("Back") }
-                        }
-                    }
-                }
+                else -> ComingSoonScreen(name = calcName, onBack = { onSelectedCalculatorChange(null) })
             }
         }
     }

@@ -1,11 +1,13 @@
 package com.clinetar.dnmw.ui.screens
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Article
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -19,7 +21,9 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.unit.dp
 import com.clinetar.dnmw.data.note.Note
 import com.clinetar.dnmw.ui.screens.tools.ColorPickerScreen
+import com.clinetar.dnmw.ui.screens.tools.IpScannerScreen
 import com.clinetar.dnmw.ui.screens.tools.PasswordGeneratorScreen
+import com.clinetar.dnmw.ui.screens.tools.SpeedTestScreen
 
 sealed class SearchResult {
     data class Tool(val item: ToolItem, val groupName: String) : SearchResult()
@@ -48,17 +52,13 @@ fun ToolsScreenContent(
                 onNavigateToNote = onNavigateToNote
             )
         } else {
+            BackHandler { selectedTool = null }
             when (toolName) {
                 "Password Generator" -> PasswordGeneratorScreen(onBack = { selectedTool = null })
                 "Color Picker" -> ColorPickerScreen(onBack = { selectedTool = null })
-                else -> {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("Tool Not Implemented Yet")
-                            Button(onClick = { selectedTool = null }) { Text("Back") }
-                        }
-                    }
-                }
+                "Speed Test" -> SpeedTestScreen(onBack = { selectedTool = null })
+                "IP Scanner" -> IpScannerScreen(onBack = { selectedTool = null })
+                else -> ComingSoonScreen(name = toolName, onBack = { selectedTool = null })
             }
         }
     }
@@ -292,6 +292,47 @@ fun GlobalSearchResults(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ComingSoonScreen(name: String, onBack: () -> Unit) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(name) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
+            )
+        },
+        containerColor = Color.Transparent
+    ) { padding ->
+        Box(
+            modifier = Modifier.padding(padding).fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Icon(
+                    Icons.Default.Build,
+                    contentDescription = null,
+                    modifier = Modifier.size(64.dp).alpha(0.3f)
+                )
+                Text("Coming Soon", style = MaterialTheme.typography.headlineSmall)
+                Text(
+                    "This tool is not yet available",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

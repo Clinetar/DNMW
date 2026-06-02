@@ -12,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -30,7 +31,7 @@ fun PasswordGeneratorScreen(onBack: () -> Unit) {
     
     val context = LocalContext.current
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(passwordLength, includeUppercase, includeLowercase, includeNumbers, includeSymbols) {
         generatedPassword = generatePassword(passwordLength.toInt(), includeUppercase, includeLowercase, includeNumbers, includeSymbols)
     }
 
@@ -42,9 +43,11 @@ fun PasswordGeneratorScreen(onBack: () -> Unit) {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Transparent)
             )
-        }
+        },
+        containerColor = Color.Transparent
     ) { padding ->
         Column(
             modifier = Modifier
@@ -95,16 +98,6 @@ fun PasswordGeneratorScreen(onBack: () -> Unit) {
             SwitchSetting("Include Lowercase", includeLowercase) { includeLowercase = it }
             SwitchSetting("Include Numbers", includeNumbers) { includeNumbers = it }
             SwitchSetting("Include Symbols", includeSymbols) { includeSymbols = it }
-
-            Button(
-                onClick = {
-                    generatedPassword = generatePassword(passwordLength.toInt(), includeUppercase, includeLowercase, includeNumbers, includeSymbols)
-                },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = includeUppercase || includeLowercase || includeNumbers || includeSymbols
-            ) {
-                Text("Generate Password")
-            }
         }
     }
 }
